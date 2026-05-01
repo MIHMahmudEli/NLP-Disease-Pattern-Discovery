@@ -6,10 +6,6 @@
 .rhistory
 .rdata
 
-# Data
-pubmed_dataset.csv
-
-# Plots and Temporary Files
-*.png
-*.csv
-!cluster_keywords.csv
+# Keep everything else for transparency as requested
+# Except very large temporary matrices if they exceed 100MB
+# (step3_tfidf_matrix.csv is currently ~63MB)
