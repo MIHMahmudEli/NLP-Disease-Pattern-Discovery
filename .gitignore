@@ -1,14 +1,15 @@
-# R specific
+# R Environment
 .Rhistory
 .RData
 .Ruserdata
 .Rproj.user/
-.Rapp.history
+.rhistory
+.rdata
 
-# OS specific
-Thumbs.db
-.DS_Store
+# Data
+pubmed_dataset.csv
 
-# Temporary files
-*.tmp
-*.log
+# Plots and Temporary Files
+*.png
+*.csv
+!cluster_keywords.csv
