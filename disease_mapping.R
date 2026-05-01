@@ -1,37 +1,40 @@
-#Step 0 — Install all packages
-install.packages(c(
-  "readr", "dplyr", "stringr",
-  "tm", "SnowballC", "textstem",
-  "Matrix", "uwot",
-  "stats",           # kmeans (built-in)
-  "dbscan",          # HDBSCAN
-  "cluster",         # silhouette score
-  "clusterSim",      # Davies-Bouldin Index
-  "tidytext",        # tidy keyword extraction
-  "ggplot2", "ggrepel"
-))
+# Disease-Specific Knowledge Mapping (Unsupervised Clustering)
+# Project Idea 4 Implementation
 
-#Step 1 — Load data
+# Step 0 — Install/Load Libraries
+required_packages <- c("readr", "dplyr", "stringr", "tm", "SnowballC", "textstem", 
+                       "Matrix", "uwot", "dbscan", "cluster", "clusterSim", 
+                       "tidytext", "ggplot2", "ggrepel")
+new_packages <- required_packages[!(required_packages %in% installed.packages()[,"Package"])]
+if(length(new_packages)) install.packages(new_packages, repos='http://cran.us.r-project.org')
+
 library(readr)
 library(dplyr)
+library(ggplot2)
 
+# Step 1 — Load data
+cat("Step 1: Loading Data...\n")
 df <- read_csv("pubmed_dataset.csv")
-cat("Rows:", nrow(df), "\n")   # Should print 8934
-cat("Columns:", names(df), "\n")
+colnames(df)[1] <- "Abstract" # Ensure naming consistency
 
-# Remove empty abstracts
+# Visualization: Abstract Length Distribution
+length_plot <- ggplot(df, aes(x = nchar(Abstract))) +
+  geom_histogram(fill = "#69b3a2", color = "white", bins = 50) +
+  labs(title = "Step 1: Distribution of Abstract Lengths", x = "Character Count", y = "Frequency") +
+  theme_minimal()
+ggsave("step1_length_distribution.png", length_plot)
+
+# Remove empty/short abstracts
 df <- df %>% filter(!is.na(Abstract) & nchar(Abstract) > 50)
-cat("After cleaning:", nrow(df), "\n")
+write_csv(df, "step1_raw_cleaned_data.csv")
 
 
-#Step 2 — Text preprocessing
+# Step 2 — Text preprocessing
+cat("Step 2: Preprocessing Text...\n")
 library(tm)
-library(textstem)   # for lemmatization (better than stemming for biomedical text)
+library(textstem)
 
-# Build a corpus from the Abstract column
 corpus <- VCorpus(VectorSource(df$Abstract))
-
-# Custom biomedical stopwords (supplement the standard list)
 bio_stopwords <- c(
   stopwords("en"),
   "study", "result", "patient", "method", "analysis",
@@ -45,137 +48,124 @@ corpus_clean <- corpus %>%
   tm_map(removeNumbers) %>%
   tm_map(removeWords, bio_stopwords) %>%
   tm_map(stripWhitespace) %>%
-  tm_map(content_transformer(lemmatize_strings))  # lemmatize (not stem)
+  tm_map(content_transformer(lemmatize_strings))
 
-# Inspect one abstract after cleaning
-inspect(corpus_clean[[1]])
+# Export Cleaned Corpus as CSV
+cleaned_df <- data.frame(doc_id = 1:length(corpus_clean), 
+                         text = sapply(corpus_clean, as.character), 
+                         stringsAsFactors = FALSE)
+write_csv(cleaned_df, "step2_cleaned_corpus.csv")
+
+# Visualization: Word Frequencies
+library(tidytext)
+word_freq <- cleaned_df %>%
+  unnest_tokens(word, text) %>%
+  count(word, sort = TRUE) %>%
+  head(30)
+
+freq_plot <- ggplot(word_freq, aes(x = reorder(word, n), y = n)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Step 2: Top 30 Words After Preprocessing", x = "Word", y = "Frequency") +
+  theme_minimal()
+ggsave("step2_word_frequencies.png", freq_plot)
 
 
-#Step 3 — TF-IDF feature extraction
+# Step 3 — TF-IDF feature extraction
+cat("Step 3: Feature Extraction (TF-IDF)...\n")
 library(Matrix)
 
-# Build Document-Term Matrix, then apply TF-IDF weighting
 dtm <- DocumentTermMatrix(
   corpus_clean,
   control = list(
     weighting  = weightTfIdf,
-    bounds     = list(global = c(10, Inf)),  # term must appear in ≥10 docs
-    wordLengths = c(3, 25)                   # filter very short/long tokens
+    bounds     = list(global = c(10, Inf)),
+    wordLengths = c(3, 25)
   )
 )
 
-cat("DTM dimensions:", dim(dtm), "\n")  # docs × terms
-
-# Remove sparse terms (keeps ~top features)
 dtm_reduced <- removeSparseTerms(dtm, sparse = 0.995)
-cat("After sparsity reduction:", dim(dtm_reduced), "\n")
-
-# Convert to a regular matrix for UMAP
 tfidf_matrix <- as.matrix(dtm_reduced)
+write_csv(as.data.frame(tfidf_matrix), "step3_tfidf_matrix.csv")
 
 
-
-#Step 4 — UMAP dimensionality reduction
+# Step 4 — UMAP dimensionality reduction
+cat("Step 4: Dimensionality Reduction (UMAP)...\n")
 library(uwot)
-
 set.seed(42)
 
 umap_result <- umap(
   tfidf_matrix,
-  n_components  = 2,      # 2D for visualization
-  n_neighbors   = 15,     # local neighborhood size
-  min_dist      = 0.1,    # controls cluster tightness
-  metric        = "cosine",  # best for text/TF-IDF data
-  n_threads     = 4,
-  verbose       = TRUE
+  n_components  = 2,
+  n_neighbors   = 15,
+  min_dist      = 0.1,
+  metric        = "cosine",
+  n_threads     = 4
 )
 
-# umap_result is an N×2 matrix
 umap_df <- data.frame(
   UMAP1 = umap_result[, 1],
   UMAP2 = umap_result[, 2]
 )
+write_csv(umap_df, "step4_umap_coordinates.csv")
+
+# Visualization: Raw UMAP
+umap_raw_plot <- ggplot(umap_df, aes(x = UMAP1, y = UMAP2)) +
+  geom_point(alpha = 0.4, color = "grey50") +
+  labs(title = "Step 4: UMAP Projection (Before Clustering)", subtitle = "Natural density of PubMed abstracts") +
+  theme_minimal()
+ggsave("step4_umap_raw.png", umap_raw_plot)
 
 
-#Step 5a — KMeans clustering
-# First, find the optimal k using the elbow method
+# Step 5a — KMeans clustering
+cat("Step 5: Clustering...\n")
 wss <- sapply(2:15, function(k) {
-  kmeans(umap_df, centers = k, nstart = 20, iter.max = 100)$tot.withinss
+  kmeans(umap_df, centers = k, nstart = 20)$tot.withinss
 })
 
-plot(2:15, wss, type = "b", pch = 19,
-     xlab = "Number of clusters (k)",
-     ylab = "Total within-cluster SS",
-     main = "Elbow Method for Optimal k")
+# Save Elbow Plot
+png("step5_elbow_plot.png")
+plot(2:15, wss, type = "b", pch = 19, xlab = "Number of Clusters (k)", ylab = "WSS", main = "Elbow Method")
+dev.off()
 
-# Apply KMeans with chosen k (e.g. k=8 for 8 disease categories)
 set.seed(42)
 k_chosen <- 8
-km_result <- kmeans(umap_df, centers = k_chosen, nstart = 25, iter.max = 200)
-
+km_result <- kmeans(umap_df, centers = k_chosen, nstart = 25)
 umap_df$cluster_kmeans <- as.factor(km_result$cluster)
+write_csv(umap_df, "step5_kmeans_results.csv")
 
-
-#Step 5b — HDBSCAN clustering (alternative)
+# Step 5b — HDBSCAN clustering
 library(dbscan)
-
-hdb_result <- hdbscan(
-  umap_df[, c("UMAP1", "UMAP2")],
-  minPts = 50   # min documents to form a cluster; tune this
-)
-
-cat("HDBSCAN clusters found:", max(hdb_result$cluster), "\n")
-cat("Noise points (cluster=0):", sum(hdb_result$cluster == 0), "\n")
-
+hdb_result <- hdbscan(umap_df[, c("UMAP1", "UMAP2")], minPts = 50)
 umap_df$cluster_hdbscan <- as.factor(hdb_result$cluster)
+write_csv(umap_df, "step5_hdbscan_results.csv")
 
 
-#Step 6 — Evaluation metrics
+# Step 6 — Evaluation metrics
+cat("Step 6: Evaluation...\n")
 library(cluster)
 library(clusterSim)
 
-# --- Silhouette Score (higher is better, range -1 to 1) ---
+# KMeans Metrics
 sil_km <- silhouette(km_result$cluster, dist(umap_df[, c("UMAP1", "UMAP2")]))
-cat("KMeans Silhouette Score:", mean(sil_km[, 3]), "\n")
+write_csv(as.data.frame(sil_km[]), "step6_silhouette_data.csv")
 
-# For HDBSCAN, exclude noise points (cluster = 0)
-valid_idx <- hdb_result$cluster != 0
-if (sum(valid_idx) > 1) {
-  sil_hdb <- silhouette(
-    hdb_result$cluster[valid_idx],
-    dist(umap_df[valid_idx, c("UMAP1", "UMAP2")])
-  )
-  cat("HDBSCAN Silhouette Score:", mean(sil_hdb[, 3]), "\n")
-}
+# Visualization: Silhouette Plot
+png("step6_silhouette_plot.png", width = 800, height = 600)
+plot(sil_km, main = "Step 6: KMeans Silhouette Analysis", col = 1:k_chosen, border = NA)
+dev.off()
 
-# --- Davies-Bouldin Index (lower is better) ---
-dbi_km <- index.DB(
-  umap_df[, c("UMAP1", "UMAP2")],
-  km_result$cluster
-)$DB
-cat("KMeans Davies-Bouldin Index:", dbi_km, "\n")
+dbi_km <- index.DB(umap_df[, c("UMAP1", "UMAP2")], km_result$cluster)$DB
+write_lines(dbi_km, "step6_davies_bouldin.txt")
 
 
-
-
-
-#Step 7 — Keyword extraction per cluster (Synchronized with Cleaned Corpus)
-library(tidytext)
-library(dplyr)
-
-cat("Synchronizing Keyword Extraction with Cleaned Corpus...\n")
-
-# Convert the cleaned DTM back to a tidy format to ensure keywords match the clustering input
+# Step 7 — Keyword extraction per cluster
+cat("Step 7: Keyword Extraction...\n")
 dtm_tidy <- tidy(dtm_reduced) %>%
   rename(doc_id = document, word = term) %>%
   mutate(doc_id = as.integer(doc_id))
 
-# Map cluster assignments back to the tidy tokens
-# Note: Ensure doc_id mapping matches the original df indices
-cluster_mapping <- data.frame(
-  doc_id = 1:nrow(df), 
-  cluster = umap_df$cluster_kmeans
-)
+cluster_mapping <- data.frame(doc_id = 1:nrow(df), cluster = umap_df$cluster_kmeans)
 
 cluster_keywords <- dtm_tidy %>%
   left_join(cluster_mapping, by = "doc_id") %>%
@@ -186,24 +176,23 @@ cluster_keywords <- dtm_tidy %>%
   slice_max(tf_idf, n = 10, with_ties = FALSE) %>%
   ungroup()
 
-# Print top keywords for each cluster to console for manual verification
-cat("\nTop Keywords per Cluster (Verified Signal):\n")
-cluster_summary <- cluster_keywords %>%
-  arrange(cluster, desc(tf_idf)) %>%
-  group_by(cluster) %>%
-  summarize(keywords = paste(word, collapse = ", "), .groups = 'drop')
+write_csv(cluster_keywords, "step7_cluster_keywords.csv")
 
-print(cluster_summary)
+# Visualization: Keyword Facets
+keyword_viz <- ggplot(cluster_keywords, aes(x = reorder_within(word, tf_idf, cluster), y = tf_idf, fill = cluster)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~cluster, scales = "free") +
+  coord_flip() +
+  scale_x_reordered() +
+  labs(title = "Step 7: Top Cluster Keywords (TF-IDF)", x = "Terms", y = "Score") +
+  theme_minimal()
+ggsave("step7_keyword_facets.png", keyword_viz, width = 12, height = 8)
 
-# Save keywords for external analysis
-write_csv(cluster_keywords, "verified_cluster_keywords.csv")
 
-
-# Step 8 — UMAP visualization with Human-Readable Labeling
-library(ggplot2)
+# Step 8 — Final Knowledge Map
+cat("Step 8: Final Visualization...\n")
 library(ggrepel)
 
-# Define the verified disease domain labels based on cluster keyword inspection
 cluster_labels <- c(
   "1" = "Molecular Pathologies / Ferroptosis",
   "2" = "Neuro-Rehabilitation / Cognitive",
@@ -216,46 +205,18 @@ cluster_labels <- c(
 )
 
 umap_df$disease_label <- cluster_labels[as.character(umap_df$cluster_kmeans)]
+centroids <- umap_df %>% group_by(disease_label) %>% summarise(UMAP1 = mean(UMAP1), UMAP2 = mean(UMAP2))
 
-# Compute cluster centroids for label placement
-centroids <- umap_df %>%
-  group_by(disease_label) %>%
-  summarise(UMAP1 = mean(UMAP1), UMAP2 = mean(UMAP2))
-
-# Plot
-ggplot(umap_df, aes(x = UMAP1, y = UMAP2, color = disease_label)) +
+final_plot <- ggplot(umap_df, aes(x = UMAP1, y = UMAP2, color = disease_label)) +
   geom_point(alpha = 0.4, size = 0.8) +
-  geom_label_repel(
-    data      = centroids,
-    aes(label = disease_label),
-    size      = 3.5,
-    fontface  = "bold",
-    box.padding = 0.5,
-    point.padding = 0.5,
-    show.legend = FALSE
-  ) +
+  geom_label_repel(data = centroids, aes(label = disease_label), size = 3.5, fontface = "bold") +
   scale_color_brewer(palette = "Set2") +
-  labs(
-    title    = "Disease Knowledge Map — PubMed Abstracts",
-    subtitle = paste0("Total Abstracts: ", nrow(df), " | Clusters: ", k_chosen),
-    caption  = paste0("KMeans Silhouette: ", round(mean(sil_km[, 3]), 3), 
-                      " | DB Index: ", round(dbi_km, 3)),
-    x        = "UMAP dimension 1",
-    y        = "UMAP dimension 2",
-    color    = "Primary Disease Focus"
-  ) +
-  theme_minimal(base_size = 12) +
-  theme(legend.position = "bottom",
-        plot.title = element_text(face = "bold", size = 16),
-        plot.subtitle = element_text(color = "darkgrey"))
+  labs(title = "Final Disease Knowledge Map — PubMed Abstracts", 
+       subtitle = paste0("Total Abstracts: ", nrow(df), " | Clusters: ", k_chosen),
+       caption = paste0("KMeans Silhouette Score: ", round(mean(sil_km[, 3]), 3)),
+       x = "UMAP Dimension 1", y = "UMAP Dimension 2", color = "Disease Domain") +
+  theme_minimal() + theme(legend.position = "bottom")
 
-ggsave("disease_knowledge_map.png", width = 11, height = 8, dpi = 300)
+ggsave("final_disease_knowledge_map.png", final_plot, width = 11, height = 8)
 
-cat("\n[Final Report]\n")
-cat("- KMeans Silhouette Score:", round(mean(sil_km[, 3]), 3), "\n")
-cat("- KMeans Davies-Bouldin Index:", round(dbi_km, 3), "\n")
-if (exists("sil_hdb")) {
-  cat("- HDBSCAN Silhouette Score:", round(mean(sil_hdb[, 3]), 3), "\n")
-}
-cat("- Map saved to: disease_knowledge_map.png\n")
-cat("- Data interpretation saved to: verified_cluster_keywords.csv\n")
+cat("\n[Pipeline Complete] All step-by-step CSVs and Graphs generated successfully.\n")
