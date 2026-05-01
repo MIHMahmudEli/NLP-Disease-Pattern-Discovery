@@ -199,18 +199,23 @@ print(cluster_summary)
 write_csv(cluster_keywords, "verified_cluster_keywords.csv")
 
 
-#Step 8 — UMAP visualization with Dynamic Labeling
+# Step 8 — UMAP visualization with Human-Readable Labeling
 library(ggplot2)
 library(ggrepel)
 
-# Suggest labels based on the keywords found (you can update this map after inspection)
-# For now, we use the top 2 keywords as a placeholder label to make it 'Dynamic'
-dynamic_labels <- cluster_summary %>%
-  mutate(label = sapply(keywords, function(x) {
-    paste(unlist(strsplit(x, ", "))[1:2], collapse = " / ")
-  }))
+# Define the verified disease domain labels based on cluster keyword inspection
+cluster_labels <- c(
+  "1" = "Molecular Pathologies / Ferroptosis",
+  "2" = "Neuro-Rehabilitation / Cognitive",
+  "3" = "Genomic Oncology / HCC",
+  "4" = "Neurodegeneration / PD-AD",
+  "5" = "Bio-Molecular Signaling",
+  "6" = "Metabolic / Obesity & Diabetes",
+  "7" = "Vascular Surgery / Interventional",
+  "8" = "Clinical Outcomes / Stroke-CVD"
+)
 
-umap_df$disease_label <- dynamic_labels$label[as.numeric(as.character(umap_df$cluster_kmeans))]
+umap_df$disease_label <- cluster_labels[as.character(umap_df$cluster_kmeans)]
 
 # Compute cluster centroids for label placement
 centroids <- umap_df %>%
