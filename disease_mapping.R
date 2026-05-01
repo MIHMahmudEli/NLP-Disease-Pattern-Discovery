@@ -159,49 +159,58 @@ cat("KMeans Davies-Bouldin Index:", dbi_km, "\n")
 
 
 
-#Step 7 — Keyword extraction per cluster
+#Step 7 — Keyword extraction per cluster (Synchronized with Cleaned Corpus)
 library(tidytext)
 library(dplyr)
 
-# Attach cluster labels
-df$cluster <- umap_df$cluster_kmeans
+cat("Synchronizing Keyword Extraction with Cleaned Corpus...\n")
 
-cluster_keywords <- df %>%
-  dplyr::select(Abstract, cluster) %>%          # <- explicit namespace
-  unnest_tokens(word, Abstract) %>%
-  filter(!word %in% stopwords("en"), nchar(word) > 3) %>%
-  count(cluster, word, sort = TRUE) %>%
+# Convert the cleaned DTM back to a tidy format to ensure keywords match the clustering input
+dtm_tidy <- tidy(dtm_reduced) %>%
+  rename(doc_id = document, word = term) %>%
+  mutate(doc_id = as.integer(doc_id))
+
+# Map cluster assignments back to the tidy tokens
+# Note: Ensure doc_id mapping matches the original df indices
+cluster_mapping <- data.frame(
+  doc_id = 1:nrow(df), 
+  cluster = umap_df$cluster_kmeans
+)
+
+cluster_keywords <- dtm_tidy %>%
+  left_join(cluster_mapping, by = "doc_id") %>%
+  group_by(cluster, word) %>%
+  summarize(n = sum(count), .groups = 'drop') %>%
   bind_tf_idf(word, cluster, n) %>%
   group_by(cluster) %>%
-  slice_max(tf_idf, n = 10) %>%
+  slice_max(tf_idf, n = 10, with_ties = FALSE) %>%
   ungroup()
 
-
-# Print top keywords for each cluster
-cluster_keywords %>%
+# Print top keywords for each cluster to console for manual verification
+cat("\nTop Keywords per Cluster (Verified Signal):\n")
+cluster_summary <- cluster_keywords %>%
   arrange(cluster, desc(tf_idf)) %>%
-  print(n = 80)
+  group_by(cluster) %>%
+  summarize(keywords = paste(word, collapse = ", "), .groups = 'drop')
+
+print(cluster_summary)
+
+# Save keywords for external analysis
+write_csv(cluster_keywords, "verified_cluster_keywords.csv")
 
 
-
-
-#Step 8 — UMAP visualization
+#Step 8 — UMAP visualization with Dynamic Labeling
 library(ggplot2)
 library(ggrepel)
 
-# Disease label mapping (update after inspecting cluster keywords above)
-cluster_labels <- c(
-  "1" = "Diabetes / Metabolic",
-  "2" = "Oncology / Cancer",
-  "3" = "Cardiovascular",
-  "4" = "Neurology",
-  "5" = "Infectious Disease",
-  "6" = "Kidney / Renal",
-  "7" = "Obesity / Nutrition",
-  "8" = "Immunology"
-)
+# Suggest labels based on the keywords found (you can update this map after inspection)
+# For now, we use the top 2 keywords as a placeholder label to make it 'Dynamic'
+dynamic_labels <- cluster_summary %>%
+  mutate(label = sapply(keywords, function(x) {
+    paste(unlist(strsplit(x, ", "))[1:2], collapse = " / ")
+  }))
 
-umap_df$disease_label <- cluster_labels[as.character(umap_df$cluster_kmeans)]
+umap_df$disease_label <- dynamic_labels$label[as.numeric(as.character(umap_df$cluster_kmeans))]
 
 # Compute cluster centroids for label placement
 centroids <- umap_df %>%
@@ -214,20 +223,34 @@ ggplot(umap_df, aes(x = UMAP1, y = UMAP2, color = disease_label)) +
   geom_label_repel(
     data      = centroids,
     aes(label = disease_label),
-    size      = 3,
+    size      = 3.5,
     fontface  = "bold",
     box.padding = 0.5,
+    point.padding = 0.5,
     show.legend = FALSE
   ) +
   scale_color_brewer(palette = "Set2") +
   labs(
-    title    = "Disease knowledge map — PubMed abstracts",
-    subtitle = paste0(nrow(df), " abstracts, k=", k_chosen, " clusters"),
+    title    = "Disease Knowledge Map — PubMed Abstracts",
+    subtitle = paste0("Total Abstracts: ", nrow(df), " | Clusters: ", k_chosen),
+    caption  = paste0("KMeans Silhouette: ", round(mean(sil_km[, 3]), 3), 
+                      " | DB Index: ", round(dbi_km, 3)),
     x        = "UMAP dimension 1",
     y        = "UMAP dimension 2",
-    color    = "Disease cluster"
+    color    = "Primary Disease Focus"
   ) +
   theme_minimal(base_size = 12) +
-  theme(legend.position = "bottom")
+  theme(legend.position = "bottom",
+        plot.title = element_text(face = "bold", size = 16),
+        plot.subtitle = element_text(color = "darkgrey"))
 
-ggsave("disease_knowledge_map.png", width = 10, height = 8, dpi = 300)
+ggsave("disease_knowledge_map.png", width = 11, height = 8, dpi = 300)
+
+cat("\n[Final Report]\n")
+cat("- KMeans Silhouette Score:", round(mean(sil_km[, 3]), 3), "\n")
+cat("- KMeans Davies-Bouldin Index:", round(dbi_km, 3), "\n")
+if (exists("sil_hdb")) {
+  cat("- HDBSCAN Silhouette Score:", round(mean(sil_hdb[, 3]), 3), "\n")
+}
+cat("- Map saved to: disease_knowledge_map.png\n")
+cat("- Data interpretation saved to: verified_cluster_keywords.csv\n")
