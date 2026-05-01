@@ -177,20 +177,38 @@ umap_plot <- ggplot(umap_df, aes(x = UMAP1, y = UMAP2, color = cluster_kmeans)) 
 ggsave("umap_clusters_plot.png", umap_plot, width = 10, height = 7)
 
 if ("Disease" %in% colnames(df)) {
-  cat("Creating Disease Mapping plot...\n")
-  disease_mapping <- umap_df %>%
-    inner_join(df %>% select(doc_id, Disease), by = "doc_id") %>%
+  cat("\n--- STEP 9b: CREATING DISEASE MAPPING PLOT ---\n")
+  
+  # Ensure types match for the join
+  df_disease <- df %>% select(doc_id, Disease) %>% mutate(doc_id = as.integer(doc_id))
+  umap_df_clean <- umap_df %>% mutate(doc_id = as.integer(doc_id))
+  
+  disease_mapping <- umap_df_clean %>%
+    inner_join(df_disease, by = "doc_id") %>%
     group_by(cluster_kmeans, Disease) %>%
     count() %>%
+    ungroup() %>%
     arrange(cluster_kmeans, desc(n))
   
-  mapping_plot <- ggplot(disease_mapping, aes(x = cluster_kmeans, y = n, fill = Disease)) +
-    geom_bar(stat = "identity", position = "dodge") +
-    theme_minimal() +
-    labs(title = "Disease Mapping to Identified Clusters",
-         x = "Cluster", y = "Document Count")
-  
-  ggsave("disease_mapping_plot.png", mapping_plot, width = 10, height = 7)
+  if (nrow(disease_mapping) > 0) {
+    cat("Plotting distribution for", nrow(disease_mapping), "disease-cluster pairs...\n")
+    
+    mapping_plot <- ggplot(disease_mapping, aes(x = cluster_kmeans, y = n, fill = Disease)) +
+      geom_bar(stat = "identity", position = "dodge") +
+      theme_minimal() +
+      labs(title = "Disease Mapping to Identified Clusters",
+           subtitle = "Validating unsupervised clusters against known labels",
+           x = "Cluster ID", 
+           y = "Number of Documents",
+           fill = "Original Disease Label")
+    
+    cat("Saving 'disease_mapping_plot.png'...\n")
+    ggsave("disease_mapping_plot.png", mapping_plot, width = 12, height = 8)
+  } else {
+    cat("Warning: No data found to map clusters to diseases. Check doc_id alignment.\n")
+  }
+} else {
+  cat("\nWarning: 'Disease' column not found in dataset. Skipping mapping plot.\n")
 }
 
 cat("\n--- PROJECT COMPLETED SUCCESSFULLY ---\n")
