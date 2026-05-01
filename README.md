@@ -16,7 +16,7 @@ The goal is to map large-scale medical knowledge by grouping related documents t
 - **Action**: Load the dataset and extract the `Abstract` column as the primary source of text.
 
 ### 2. Preprocessing
-- **Cleaning**: Lowercasing, removing HTML tags (e.g., `<b>`, `<i>`), punctuation, numbers, and stop words.
+- **Cleaning**: Lowercasing, expanding contractions (e.g., "don't" → "do not"), removing HTML tags (e.g., `<b>`, `<i>`), punctuation, and numbers.
 - **Stemming**: Reducing words to their root form (e.g., "clustering" → "cluster") using the Snowball algorithm.
 
 ### 3. Feature Extraction (TF-IDF)

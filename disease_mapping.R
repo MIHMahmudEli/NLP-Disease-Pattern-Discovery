@@ -5,7 +5,7 @@
 
 # 1. Load Libraries -------------------------------------------------------
 cat("\n--- STEP 1: LOADING LIBRARIES ---\n")
-required_packages <- c("tidyverse", "tidytext", "tm", "uwot", "dbscan", "cluster", "fpc", "wordcloud", "SnowballC", "Matrix")
+required_packages <- c("tidyverse", "tidytext", "tm", "uwot", "dbscan", "cluster", "fpc", "wordcloud", "SnowballC", "hunspell", "textstem", "textclean", "Matrix")
 
 safe_install <- function(pkgs) {
   lock_dir <- file.path(.libPaths()[1], "00LOCK")
@@ -31,6 +31,9 @@ library(cluster)
 library(fpc)
 library(wordcloud)
 library(SnowballC)
+library(hunspell) # For spell checking
+library(textstem) # For lemmatization
+library(textclean) # For emojis and emoticons
 library(Matrix)
 cat("Libraries loaded successfully.\n")
 
@@ -54,23 +57,60 @@ print(head(df[, c("doc_id", "Disease", "text")], 3))
 cat("\n--- STEP 3: PREPROCESSING TEXT ---\n")
 
 clean_text <- function(text) {
+  # --- STEP 1 & 5 & 6: ADVANCED CLEANING, CONTRACTIONS, EMOJIS ---
+  
+  # 1. Convert to lowercase (Base R)
   text <- tolower(text)
-  text <- gsub("<.*?>", "", text) # Remove HTML tags
-  text <- removePunctuation(text)
+  
+  # 5. Expand Contractions
+  text <- replace_contraction(text)
+  
+  # 6. Handle Emojis and Emoticons (Convert to words like <happy>)
+  text <- replace_emoji(text)
+  text <- replace_emoticon(text)
+  
+  # 1. (Cont.) Remove HTML tags
+  text <- gsub("<.*?>", "", text)
+  
+  # 1. (Cont.) Remove Numbers (tm package)
   text <- removeNumbers(text)
-  text <- removeWords(text, stopwords("en"))
+  
+  # 7. Spell Checking & Correction
+  # (Doing this before punctuation removal to keep word boundaries)
+  words <- unlist(strsplit(text, "\\s+"))
+  alpha_words <- words[grepl("^[a-z]+$", words)]
+  misspelled <- alpha_words[!hunspell_check(alpha_words)]
+  if(length(misspelled) > 0) {
+    unique_misspelled <- unique(misspelled)
+    suggestions <- hunspell_suggest(unique_misspelled)
+    corrections <- sapply(suggestions, function(x) if(length(x) > 0) x[1] else NULL)
+    names(corrections) <- unique_misspelled
+    corrections <- corrections[!sapply(corrections, is.null)]
+    if(length(corrections) > 0) {
+      for(m in names(corrections)) { words[words == m] <- corrections[m] }
+      text <- paste(words, collapse = " ")
+    }
+  }
+  
+  # 1. (Cont.) Remove Punctuation (tm package)
+  text <- removePunctuation(text)
+  
+  # Final Cleanup
   text <- stripWhitespace(text)
+  text <- trimws(text)
+  
   return(text)
 }
 
 cat("Cleaning text and removing HTML tags...\n")
 df$cleaned_text <- clean_text(df$text)
 
-cat("Tokenizing and Stemming...\n")
+cat("Tokenizing, Cleaning Stop Words, Lemmatizing, and Stemming...\n")
 tidy_docs <- df %>%
-  unnest_tokens(word, cleaned_text) %>%
-  mutate(word = wordStem(word)) %>%
-  filter(!word %in% stop_words$word)
+  unnest_tokens(word, cleaned_text) %>% # 2. Tokenization
+  filter(!word %in% stop_words$word) %>% # 3. Stop Words Removal
+  mutate(word = lemmatize_words(word)) %>% # 4a. Lemmatization
+  mutate(word = wordStem(word))           # 4b. Stemming
 
 cat("Tokenized data preview:\n")
 print(head(tidy_docs, 10))
