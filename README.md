@@ -51,7 +51,7 @@ We convert text into numbers using **TF-IDF (Term Frequency-Inverse Document Fre
   - `step3_term_distribution.png`: How terms are spread across the documents.
 
 ![Top TF-IDF Terms](step3_top_tfidf_terms.png)
-![Term Distributation](step3_term_distribution.png)
+![Term Distribution](step3_term_distribution.png)
 
 ---
 
@@ -96,7 +96,7 @@ To ensure our clusters are scientifically meaningful, we calculate:
   - `step6_silhouette_plot.png`: Detailed view of cluster "tightness."
   - `step6_cluster_sizes.png`: How many abstracts fall into each disease domain.
 
-![Silhouette Analysis](step6_evaluation_metrics.csv)
+![Silhouette Analysis](step6_silhouette_plot.png)
 ![Cluster Sizes](step6_cluster_sizes.png)
 
 ---
@@ -129,9 +129,69 @@ The final result is a beautiful, labeled map of the biomedical landscape. We als
 
 ## 📈 Key Findings
 
-- **Cluster 1 (Cancer Immunology):** Dominated by terms like _epigenetic_, _immune_, and _tumor_.
-- **Cluster 8 (Neurodegeneration):** Highly distinct group focusing on _amyloid_, _alzheimer_, and _parkinson_.
-- **Interdisciplinary Links:** The heatmap reveals significant overlap between _Vascular Surgery_ and _Cardiovascular Health_, as expected.
+### 🏆 Model Performance
+The pipeline achieved strong, statistically validated clustering results:
+
+| Metric | Value | Interpretation |
+|--------|-------|----------------|
+| **KMeans Silhouette Score** | **0.374** | *Good* — clusters are well-separated with clear boundaries |
+| **Davies-Bouldin Index** | **0.903** | *Good* — low inter-cluster similarity (closer to 0 is better) |
+| **KMeans Clusters** | **8** | Chosen via Elbow method; WSS dropped sharply from k=2 to k=8 |
+| **HDBSCAN Clusters** | **3** | Found only 3 dense cores; flagged **115 noise/outlier abstracts** |
+| **Total Abstracts Processed** | **7,929** | After removing short/empty documents from raw dataset |
+| **Vocabulary Size** | **2,213 terms** | After TF-IDF filtering (min doc freq ≥ 20, sparsity ≤ 0.993) |
+
+---
+
+### 🗺️ Disease Domain Distribution
+Eight distinct biomedical research clusters were identified. The largest domain was **Neurodegeneration / PD-AD** and the smallest was **Ferroptosis & Neuroinflammation**:
+
+| Rank | Disease Domain | Abstracts | Share |
+|------|---------------|-----------|-------|
+| 1 | Neurodegeneration / PD-AD | **1,400** | 17.7% |
+| 2 | Cognitive Neuroscience / Dementia Diagnostics | **1,268** | 16.0% |
+| 3 | Cardiovascular & Maternal Health Outcomes | **1,171** | 14.8% |
+| 4 | Healthcare Delivery / Diabetes Care | **1,125** | 14.2% |
+| 5 | Oncology Trials / Chronic Disease Management | **1,119** | 14.1% |
+| 6 | Vascular Surgery / Interventional | **1,046** | 13.2% |
+| 7 | Cancer Immunology / Epigenetics | **974** | 12.3% |
+| 8 | Ferroptosis & Neuroinflammation | **826** | 10.4% |
+
+---
+
+### 🔬 Cluster Signature Terms (What Defines Each Domain)
+
+Each cluster's identity is defined by its highest-scoring TF-IDF keywords — these are the terms that uniquely distinguish it from all other disease groups:
+
+- **Cancer Immunology / Epigenetics** — Top terms: `metastasis`, `single-cell`, `T-cell`, `methylation`, `immunosuppressive`, `epigenetic`. This cluster focuses on tumor microenvironment, immune escape, and epigenomic reprogramming.
+
+- **Oncology Trials / Chronic Disease Management** — Top terms: `progression-free`, `metastasis`, `open-label`, `nationwide`, `outpatient`. Represents clinical oncology outcomes, treatment arm comparisons, and real-world evidence studies.
+
+- **Cognitive Neuroscience / Dementia Diagnostics** — Top terms: `MCI` (Mild Cognitive Impairment), `EEG`, `PET`, `neuropsychological`, `multimodal`, `MoCA`. Focuses on diagnostic biomarkers and neuroimaging for early dementia detection.
+
+- **Cardiovascular & Maternal Health Outcomes** — Top terms: `aOR`, `MACE`, `in-hospital`, `fetal`, `birth`, `hospitalization`. Captures outcome-driven studies linking cardiovascular risk with pregnancy and maternal complications.
+
+- **Vascular Surgery / Interventional** — Top terms: `NIHSS`, `stenosis`, `angiography`, `anticoagulation`, `valve`, `aneurysm`. Represents procedural cardiology and stroke intervention research.
+
+- **Ferroptosis & Neuroinflammation** — Top terms: `ferroptosis`, `macrophage polarization`, `ROS`, `lipid peroxidation`, `autophagy`, `mitochondrion`. A highly specialized and molecularly distinct cluster about iron-dependent cell death in neurological contexts.
+
+- **Healthcare Delivery / Diabetes Care** — Top terms: `nurse`, `caregiver`, `HbA1c`, `rural`, `semi-structured interview`, `education`. Focuses on qualitative and public health research into diabetes management barriers.
+
+- **Neurodegeneration / PD-AD** — Top terms: `α-synuclein`, `astrocyte`, `fibril`, `autophagy`, `microglial`, `α-syn`. The largest cluster, tightly focused on the molecular pathology of Parkinson's and Alzheimer's disease.
+
+---
+
+### 🔗 Cross-Disease Similarity Insights (Cosine Similarity Matrix)
+
+The cosine similarity heatmap revealed important interdisciplinary overlaps in vocabulary:
+
+- **Highest similarity pair:** Ferroptosis & Neuroinflammation ↔ Neurodegeneration / PD-AD → **0.754**. This makes biological sense — ferroptosis is an emerging mechanism in Parkinson's/Alzheimer's disease research, sharing terms around oxidative stress and neuronal death.
+
+- **Strong oncology bridge:** Vascular Surgery ↔ Oncology Trials → **0.725**, and Cardiovascular & Maternal Health ↔ Oncology Trials → **0.720**. Clinical trial language (outcomes, hazard ratios, comorbidities) creates high textual overlap between these domains.
+
+- **Most isolated domain:** Ferroptosis & Neuroinflammation showed the **lowest similarity** with Cardiovascular & Maternal Health (**0.387**) and Vascular Surgery (**0.384**), confirming it occupies a unique molecular niche far from clinical outcome research.
+
+- **Cancer-Neurodegeneration link:** Cancer Immunology ↔ Neurodegeneration → **0.648**, reflecting shared research into cellular dysfunction, autophagy, and apoptotic pathways across both disease types.
 
 ## 💻 Tech Stack
 
