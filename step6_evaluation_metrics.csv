@@ -1,0 +1,3 @@
+Metric,Value,Rating
+"Silhouette Score (higher=better, max=1)",0.374,Good
+Davies-Bouldin Index (lower=better),0.903,Good
